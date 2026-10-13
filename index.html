@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cose da fare</title>
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Cose da fare">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icone/icona-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icone/icona-180.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Manca la configurazione di Firebase -->
+    <section class="login" id="vista-setup" hidden>
+      <h1>Quasi pronto</h1>
+      <p>Manca il collegamento a Firebase. Apri <code>firebase-config.js</code> e incolla i dati del progetto, come spiegato nel file LEGGIMI.</p>
+    </section>
+
+    <!-- Accesso -->
+    <section class="login" id="vista-accesso" hidden>
+      <h1>Cose da fare</h1>
+      <p id="acc-intro">Entra con la tua email e la tua password. Basta farlo una volta per ogni telefono o computer.</p>
+      <form class="card" id="acc-form" novalidate>
+        <div class="field">
+          <label for="acc-email">Email</label>
+          <input id="acc-email" type="email" autocomplete="email" inputmode="email" required>
+        </div>
+        <div class="field">
+          <label for="acc-pass">Password</label>
+          <input id="acc-pass" type="password" autocomplete="current-password" minlength="6" required>
+        </div>
+        <p class="err" id="acc-err" hidden></p>
+        <p class="msg" id="acc-msg" hidden></p>
+        <button class="btn primary" id="acc-entra" type="submit">Entra</button>
+        <div class="links">
+          <button class="linkbtn" id="acc-switch" type="button">Prima volta? Crea il tuo accesso</button>
+          <button class="linkbtn" id="acc-reset" type="button">Password dimenticata</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- La bacheca -->
+    <div id="vista-bacheca" hidden>
+      <header class="top">
+        <h1>Cose da fare</h1>
+        <span class="sync" id="sync" data-s="wait"><i></i><span>Collegamento…</span></span>
+        <button class="btn primary" id="nuovo" type="button">+ Aggiungi un post-it</button>
+      </header>
+
+      <section class="sheet" aria-label="Foglio delle priorità">
+        <div class="quad" data-q="q1"></div>
+        <div class="quad" data-q="q2"></div>
+        <div class="quad" data-q="q4"></div>
+      </section>
+
+      <section class="done" aria-labelledby="fatti-h">
+        <div class="done-head">
+          <h2 id="fatti-h">Fatti <span id="fatti-n"></span></h2>
+          <button class="btn small" type="button" id="fatti-toggle" aria-expanded="false">Mostra i fatti</button>
+        </div>
+        <ul class="done-list" id="fatti-list" hidden></ul>
+      </section>
+
+      <footer class="foot">
+        <span id="chi"></span>
+        <button class="linkbtn" id="esci" type="button">Esci</button>
+      </footer>
+    </div>
+  </div>
+
+  <dialog id="dlg" aria-labelledby="dlg-title">
+    <form class="form" id="form" method="dialog" novalidate>
+      <div class="form-head">
+        <h2 id="dlg-title">Nuovo post-it</h2>
+        <button type="button" class="btn plain" id="chiudi">Chiudi</button>
+      </div>
+      <div class="form-body">
+        <div class="field">
+          <label for="f-titolo">Titolo</label>
+          <input id="f-titolo" type="text" maxlength="140" placeholder="Es. Rinnovo polizza auto" required>
+        </div>
+        <div class="field">
+          <label for="f-persona">Persona o nota</label>
+          <input id="f-persona" type="text" maxlength="200" placeholder="Es. Sig. Rossi, da richiamare">
+        </div>
+        <div class="two">
+          <div class="field">
+            <label for="f-giorno">Giorno</label>
+            <input id="f-giorno" type="date">
+          </div>
+          <div class="field">
+            <label for="f-ora">Ora</label>
+            <input id="f-ora" type="time">
+          </div>
+        </div>
+        <div class="field">
+          <span class="lbl">Dove lo metto</span>
+          <div class="where" id="f-quad"></div>
+        </div>
+
+        <button type="button" class="more-toggle" id="piu">+ Aggiungi altre informazioni</button>
+        <div class="extra" id="extra" hidden>
+          <div class="field">
+            <label for="f-dettagli">Note</label>
+            <textarea id="f-dettagli" maxlength="8000" placeholder="Tutto quello che serve ricordare"></textarea>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="f-tel">Telefono</label>
+              <input id="f-tel" type="tel" maxlength="40">
+            </div>
+            <div class="field">
+              <label for="f-email">Email</label>
+              <input id="f-email" type="email" maxlength="200">
+            </div>
+          </div>
+          <div class="field">
+            <label for="f-rif">N. pratica o polizza</label>
+            <input id="f-rif" type="text" maxlength="200">
+          </div>
+        </div>
+        <p class="stamp" id="f-stamp" hidden></p>
+      </div>
+      <div class="form-foot">
+        <span id="del-zone"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="fatto-btn">✓ Fatto</button>
+        <button type="submit" class="btn primary" id="salva">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden><span id="toast-msg"></span><button type="button" id="toast-undo">Annulla</button></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

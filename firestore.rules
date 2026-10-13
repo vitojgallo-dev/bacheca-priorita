@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Ogni persona legge e scrive solo i propri post-it, in utenti/<suo id>/note.
+// Tutto il resto del database è chiuso.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /utenti/{uid}/note/{nota} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
