@@ -63,6 +63,7 @@ onAuthStateChanged(auth, (user) => {
   col = collection(db, "utenti", user.uid, "note");
   show("vista-bacheca");
   render();
+  setTimeout(loadXlsx, 1500);
   setSync("wait", "Collegamento…");
   stopListen = onSnapshot(col, { includeMetadataChanges: true }, (snap) => {
     const o = new Map();
@@ -482,6 +483,111 @@ dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
 
 // "Oggi" e "Scaduto" seguono l'orologio
 setInterval(() => { if (col && !dlg.open) render(); }, 60000);
+
+/* ---------- Copia di sicurezza in Excel ---------- */
+
+// La libreria per scrivere i file Excel si carica dopo l'accesso, in sottofondo:
+// così al tocco del pulsante è già pronta (iPhone vuole il salvataggio subito dopo il tocco).
+// Se non arriva, la copia esce in CSV, che Excel apre lo stesso.
+const XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/xlsx.mjs";
+let xlsx = null;
+let xlsxLoading = null;
+function loadXlsx() {
+  if (!xlsxLoading) {
+    xlsxLoading = import(XLSX_URL)
+      .then((m) => (xlsx = m))
+      .catch(() => { xlsxLoading = null; return null; });
+  }
+  return xlsxLoading;
+}
+
+const COLONNE = [
+  "Parte", "Titolo", "Persona o nota", "Giorno", "Ora", "Note", "Telefono", "Email",
+  "N. pratica o polizza", "Scritto il", "Fatto il", "Codice",
+];
+const fmtDate = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+const fmtStamp = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function riga(id, n) {
+  const d = parseLocal(n.quando);
+  return [
+    QUAD[qOf(n)].nome,
+    n.titolo || "",
+    n.persona || "",
+    d ? fmtDate.format(d) : "",
+    d && hasTime(n.quando) ? fmtTime.format(d) : "",
+    n.dettagli || "",
+    n.tel || "",
+    n.email || "",
+    n.rif || "",
+    n.creato ? fmtStamp.format(new Date(n.creato)) : "",
+    n.fatto ? fmtStamp.format(new Date(n.fatto)) : "",
+    id,
+  ];
+}
+
+function righe() {
+  const all = [...notes];
+  const ordineParte = { q1: 0, q2: 1, q4: 2 };
+  const daFare = all.filter(([, n]) => n.stato !== "fatto")
+    .sort((a, b) => (ordineParte[qOf(a[1])] - ordineParte[qOf(b[1])]) || sortOpen(a, b))
+    .map(([id, n]) => riga(id, n));
+  const fatti = all.filter(([, n]) => n.stato === "fatto")
+    .sort((a, b) => (b[1].fatto || 0) - (a[1].fatto || 0))
+    .map(([id, n]) => riga(id, n));
+  return { daFare, fatti };
+}
+
+function fileXlsx(nome, { daFare, fatti }) {
+  const wb = xlsx.utils.book_new();
+  const larghezze = [24, 32, 28, 12, 7, 50, 16, 28, 20, 18, 18, 24].map((wch) => ({ wch }));
+  for (const [titolo, dati] of [["Da fare", daFare], ["Fatti", fatti]]) {
+    const ws = xlsx.utils.aoa_to_sheet([COLONNE, ...dati]);
+    ws["!cols"] = larghezze;
+    xlsx.utils.book_append_sheet(wb, ws, titolo);
+  }
+  const buf = xlsx.write(wb, { bookType: "xlsx", type: "array" });
+  return new File([buf], nome + ".xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+// Ripiego senza libreria: punto e virgola e BOM, come lo vuole Excel in italiano
+function fileCsv(nome, { daFare, fatti }) {
+  const cella = (v) => /[";\n\r]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  const testo = [["Stato", ...COLONNE], ...daFare.map((r) => ["Da fare", ...r]), ...fatti.map((r) => ["Fatto", ...r])]
+    .map((r) => r.map(cella).join(";")).join("\r\n");
+  return new File(["﻿" + testo], nome + ".csv", { type: "text/csv;charset=utf-8" });
+}
+
+function salvaFile(file) {
+  // Sull'iPhone installato come app il download non funziona: si passa dal pannello Condividi
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (ios && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: file.name }).catch(() => { /* chiuso dall'utente */ });
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const a = el("a");
+  a.href = url;
+  a.download = file.name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+$("#scarica").addEventListener("click", async () => {
+  if (!loaded) { showToast("Aspetta che i post-it siano caricati, poi riprova", false); return; }
+  const oggi = new Date();
+  const pad = (x) => String(x).padStart(2, "0");
+  const nome = "cose-da-fare-" + oggi.getFullYear() + "-" + pad(oggi.getMonth() + 1) + "-" + pad(oggi.getDate());
+  const dati = righe();
+  if (!xlsx) await loadXlsx();
+  const file = xlsx ? fileXlsx(nome, dati) : fileCsv(nome, dati);
+  salvaFile(file);
+  const tot = dati.daFare.length + dati.fatti.length;
+  showToast("Copia pronta: " + tot + " post-it in " + file.name, false);
+});
 
 /* ---------- Funziona anche senza internet ---------- */
 

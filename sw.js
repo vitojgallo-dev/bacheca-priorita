@@ -1,7 +1,7 @@
 // Tiene una copia della pagina, così si apre anche senza internet.
 // I post-it invece li conserva Firestore nella sua cache e li sincronizza da solo.
 // Quando cambi un file, alza il numero di VERSIONE: i telefoni prendono la nuova copia.
-const VERSIONE = "v1";
+const VERSIONE = "v2";
 const CACHE = "cose-da-fare-" + VERSIONE;
 const FILE = [
   "./",
@@ -32,7 +32,8 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   const proprio = url.origin === self.location.origin;
-  const libreria = url.hostname === "www.gstatic.com" && url.pathname.startsWith("/firebasejs/");
+  const libreria = (url.hostname === "www.gstatic.com" && url.pathname.startsWith("/firebasejs/")) ||
+    (url.hostname === "cdn.jsdelivr.net" && url.pathname.startsWith("/npm/xlsx@"));
   if (!proprio && !libreria) return; // Firestore e accesso passano diretti
 
   // Prima la rete (così gli aggiornamenti arrivano), la copia solo se manca internet
