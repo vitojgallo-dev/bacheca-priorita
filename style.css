@@ -159,6 +159,7 @@ button { cursor: pointer; }
 .copia h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--rule); letter-spacing: .12em; text-transform: uppercase; }
 .copia p { margin: 0; color: var(--ink-2); font-size: 15px; }
 
+.foot .ver { margin-left: auto; }
 .foot { margin-top: 30px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--ink-3); font-size: 14px; }
 
 /* Schermata di accesso */

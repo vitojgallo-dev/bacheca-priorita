@@ -50,7 +50,7 @@ Il piano gratuito (Spark) basta e avanza: 50.000 letture e 20.000 scritture al g
 
 ## Aggiornare l'app
 
-Dopo aver cambiato un file, alza `VERSIONE` in `sw.js` (es. `v2`), poi commit e push.
+Dopo aver cambiato un file, alza `VERSIONE` in `sw.js` (es. `v6`) e lo stesso numero in fondo a `index.html` ("versione 6"), poi commit e push.
 I dispositivi prendono la nuova versione alla prossima apertura con internet.
 
 ### Un aggiornamento non deve mai toccare le voci scritte

@@ -1,7 +1,7 @@
 // Tiene una copia della pagina, così si apre anche senza internet.
 // Le voci invece le conserva Firestore nella sua cache e le sincronizza da solo.
 // Quando cambi un file, alza il numero di VERSIONE: i telefoni prendono la nuova copia.
-const VERSIONE = "v4";
+const VERSIONE = "v5";
 const CACHE = "cose-da-fare-" + VERSIONE;
 const FILE = [
   "./",
@@ -40,7 +40,9 @@ self.addEventListener("fetch", (e) => {
 
   // Prima la rete (così gli aggiornamenti arrivano), la copia solo se manca internet
   e.respondWith(
-    fetch(req)
+    // "no-cache": si chiede sempre a GitHub se il file è cambiato (risposta minima se non lo è),
+    // invece di fidarsi per 10 minuti della copia del browser.
+    fetch(req, { cache: "no-cache" })
       .then((res) => {
         if (res.ok) {
           const copia = res.clone();
