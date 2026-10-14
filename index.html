@@ -46,6 +46,29 @@
       </form>
     </section>
 
+    <!-- Apertura della chiave: dura un attimo dopo l'accesso -->
+    <section class="login" id="vista-attesa" hidden>
+      <h1>Cose da fare</h1>
+      <p>Apro le tue voci…</p>
+    </section>
+
+    <!-- Caso raro: password cambiata e nessun dispositivo che conosca già la chiave -->
+    <section class="login" id="vista-blocco" hidden>
+      <h1>Le tue voci sono protette</h1>
+      <p>Hai cambiato password. Per aprire le voci scritte prima, serve una volta sola la password che usavi prima.</p>
+      <form class="card" id="blocco-form" novalidate>
+        <div class="field">
+          <label for="blocco-pass">Password di prima</label>
+          <input id="blocco-pass" type="password" autocomplete="off" required>
+        </div>
+        <p class="err" id="blocco-err" hidden>Non è quella giusta. Riprova, oppure chiedi all'amministratore: può sbloccarle lui.</p>
+        <button class="btn primary" id="blocco-ok" type="submit">Apri le mie voci</button>
+        <div class="links">
+          <button class="linkbtn" id="blocco-esci" type="button">Esci</button>
+        </div>
+      </form>
+    </section>
+
     <!-- La bacheca -->
     <div id="vista-bacheca" hidden>
       <header class="top">

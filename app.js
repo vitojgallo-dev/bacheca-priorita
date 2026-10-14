@@ -1,8 +1,14 @@
 // Bacheca "Cose da fare": il foglio importante/urgente in tre parti, ognuna con il suo elenco da spuntare.
 // I dati stanno su Firebase (Firestore) in utenti/<id>/note: ognuno vede solo i suoi,
 // uguali su tutti i dispositivi dove entra con la stessa email.
+// Il contenuto delle voci viaggia e resta cifrato: vedi cifratura.js.
 
 import { firebaseConfig } from "./firebase-config.js";
+import { chiaveRiserva } from "./chiave-riserva.js";
+import {
+  nuovaChiave, avvolgiConPassword, apriConPassword, avvolgiPerRiserva,
+  creaVerifica, eLaChiave, cifraVoce, decifraVoce, haCampiInChiaro,
+} from "./cifratura.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -10,16 +16,21 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
+  collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, getDocFromServer, runTransaction,
+  terminate, clearIndexedDbPersistence,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 // Le tre parti del foglio. Una voce con una parte sconosciuta finisce in basso.
 const QUAD = {
-  q1: { nome: "Importante urgente", dot: "var(--q1-note)" },
-  q2: { nome: "Importante non urgente", dot: "var(--q2-note)" },
-  q4: { nome: "Non importante non urgente", dot: "var(--q4-note)" },
+  q1: { nome: "Importante urgente" },
+  q2: { nome: "Importante non urgente" },
+  q4: { nome: "Non importante non urgente" },
 };
 const qOf = (n) => (n.q === "q1" || n.q === "q2") ? n.q : "q4";
+
+// Il documento con la chiave avvolta sta nella stessa collezione delle voci (così valgono
+// le stesse regole del database). Gli id delle voci non cominciano mai con "_".
+const ID_CHIAVE = "_chiave";
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, cls, text) => {
@@ -28,9 +39,8 @@ const el = (tag, cls, text) => {
   if (text != null) n.textContent = text;
   return n;
 };
-const show = (id) => {
-  for (const v of ["vista-setup", "vista-accesso", "vista-bacheca"]) $("#" + v).hidden = v !== id;
-};
+const VISTE = ["vista-setup", "vista-accesso", "vista-attesa", "vista-blocco", "vista-bacheca"];
+const show = (id) => { for (const v of VISTE) $("#" + v).hidden = v !== id; };
 
 /* ---------- Avvio ---------- */
 
@@ -45,37 +55,236 @@ const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
 
-let notes = new Map();
+let notes = new Map();   // id → voce già decifrata
 let col = null;          // la collezione delle voci di chi è entrato
+let chiave = null;       // la chiave dati, una volta sbloccata
 let stopListen = null;
 let loaded = false;
+let passwordAppenaScritta = null;   // tenuta in memoria solo il tempo di sbloccare la chiave
+let uscendo = false;
 
-onAuthStateChanged(auth, (user) => {
+/* ---------- La chiave sul dispositivo ---------- */
+
+// Resta qui finché non si preme «Esci»: è quella che permette di aprire l'app senza
+// riscrivere la password, e di sopravvivere a un cambio di password.
+const chiaveLocale = {
+  apri() {
+    return new Promise((ok, ko) => {
+      const r = indexedDB.open("cose-da-fare-chiavi", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("chiavi");
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => ko(r.error);
+    });
+  },
+  async fai(modo, fn) {
+    const d = await this.apri();
+    return new Promise((ok, ko) => {
+      const t = d.transaction("chiavi", modo);
+      const q = fn(t.objectStore("chiavi"));
+      t.oncomplete = () => { d.close(); ok(q.result); };
+      t.onerror = () => { d.close(); ko(t.error); };
+    });
+  },
+  async leggi(uid) { try { return (await this.fai("readonly", (s) => s.get(uid))) || null; } catch { return null; } },
+  async scrivi(uid, k) { try { await this.fai("readwrite", (s) => s.put(k, uid)); } catch { /* resta solo in memoria */ } },
+  async cancella(uid) { try { await this.fai("readwrite", (s) => s.delete(uid)); } catch { /* niente da cancellare */ } },
+};
+
+class Bloccata extends Error {}
+class DaRientrare extends Error {}
+
+/**
+ * Trova la chiave dati di chi è entrato, senza chiedere niente in più.
+ * - App riaperta (nessuna password a disposizione): quella sul dispositivo.
+ * - Accesso con password: quella nel database, aperta con la password; la prima volta la crea.
+ * - La password non la apre (è stata cambiata): se quella sul dispositivo è giusta, la si
+ *   riavvolge con la password nuova. Altrimenti la voce resta bloccata (Bloccata).
+ */
+async function sbloccaChiave(user, password) {
+  const locale = await chiaveLocale.leggi(user.uid);
+  if (!password) {
+    if (locale) return locale;
+    throw new DaRientrare();
+  }
+
+  const ref = doc(col, ID_CHIAVE);
+  const snap = await getDocFromServer(ref);
+
+  if (!snap.exists()) {
+    const k = locale || await nuovaChiave();
+    const rec = {
+      v: 1,
+      utente: await avvolgiConPassword(k, password),
+      riserva: await avvolgiPerRiserva(k, chiaveRiserva),
+      verifica: await creaVerifica(k),
+      creato: Date.now(),
+    };
+    // Se nel frattempo un altro dispositivo l'ha creata, vale la sua: mai due chiavi diverse.
+    const altra = await runTransaction(db, async (tx) => {
+      const s = await tx.get(ref);
+      if (s.exists()) return s.data();
+      tx.set(ref, rec);
+      return null;
+    });
+    if (!altra) { await chiaveLocale.scrivi(user.uid, k); return k; }
+    return apriRecord(user, altra, password, locale);
+  }
+  return apriRecord(user, snap.data(), password, locale);
+}
+
+async function apriRecord(user, rec, password, locale) {
+  try {
+    const k = await apriConPassword(rec.utente, password);
+    await chiaveLocale.scrivi(user.uid, k);
+    return k;
+  } catch {
+    // Password cambiata: la chiave sul dispositivo, se è quella giusta, si riavvolge da sola.
+    if (locale && await eLaChiave(locale, rec.verifica)) {
+      await updateDoc(doc(col, ID_CHIAVE), { utente: await avvolgiConPassword(locale, password), aggiornato: Date.now() });
+      return locale;
+    }
+    throw new Bloccata();
+  }
+}
+
+/* ---------- Entrata e uscita ---------- */
+
+onAuthStateChanged(auth, async (user) => {
   if (stopListen) { stopListen(); stopListen = null; }
   notes = new Map();
   loaded = false;
+  chiave = null;
   if (!user) {
     col = null;
-    show("vista-accesso");
+    if (!uscendo) show("vista-accesso");
     return;
   }
-  $("#chi").textContent = "Sei entrato come " + (user.email || "");
   col = collection(db, "utenti", user.uid, "note");
+  const password = passwordAppenaScritta;
+  passwordAppenaScritta = null;
+  show("vista-attesa");
+  try {
+    chiave = await sbloccaChiave(user, password);
+  } catch (e) {
+    if (e instanceof Bloccata) { mostraBlocco(user, password); return; }
+    if (e instanceof DaRientrare) {
+      // Accesso ricordato ma niente chiave qui (la versione di prima non cifrava, o è stata
+      // cancellata la memoria del browser): si chiede la password una volta.
+      await signOut(auth);
+      loginMsg("", "Per proteggere le tue voci, scrivi di nuovo la tua password.");
+      return;
+    }
+    show("vista-accesso");
+    loginMsg(e && e.code === "unavailable"
+      ? "Serve internet per entrare la prima volta. Controlla la connessione e riprova."
+      : "Non sono riuscito ad aprire le tue voci. Riprova.", "");
+    await signOut(auth);
+    return;
+  }
+  apriBacheca(user);
+});
+
+function apriBacheca(user) {
+  $("#chi").textContent = "Sei entrato come " + (user.email || "");
   show("vista-bacheca");
   render();
   setTimeout(loadXlsx, 1500);
   setSync("wait", "Collegamento…");
   stopListen = onSnapshot(col, { includeMetadataChanges: true }, (snap) => {
-    const o = new Map();
-    snap.forEach((d) => o.set(d.id, d.data()));
-    notes = o;
-    loaded = true;
-    if (snap.metadata.hasPendingWrites) setSync("wait", "Sto salvando…");
-    else if (snap.metadata.fromCache) setSync("off", navigator.onLine ? "Collegamento…" : "Senza internet: salvo appena torna");
-    else setSync("on", "Salvato e sincronizzato");
-    render();
+    leggiSnapshot(snap).catch(() => setSync("err", "Non riesco a leggere le voci: ricarica la pagina"));
   }, () => setSync("err", "Collegamento perso: ricarica la pagina"));
+}
+
+// Le voci decifrate restano in memoria finché il documento non cambia: lo stesso
+// documento non si decifra due volte.
+const giaDecifrate = new Map();   // id → { firma, voce }
+const inConversione = new Set();
+let turno = 0;
+
+async function leggiSnapshot(snap) {
+  const mio = ++turno;
+  const o = new Map();
+  const daConvertire = [];
+  for (const d of snap.docs) {
+    if (d.id.startsWith("_")) continue;
+    const dati = d.data();
+    const firma = JSON.stringify(dati);
+    const prima = giaDecifrate.get(d.id);
+    let voce;
+    if (prima && prima.firma === firma) voce = prima.voce;
+    else {
+      try { voce = await decifraVoce(chiave, dati); }
+      catch { continue; }   // cifrata con un'altra chiave: non la si mostra e non la si tocca
+      giaDecifrate.set(d.id, { firma, voce });
+    }
+    o.set(d.id, voce);
+    if (haCampiInChiaro(dati)) daConvertire.push(d.id);
+  }
+  if (mio !== turno) return;   // nel frattempo è arrivato uno snapshot più nuovo
+  notes = o;
+  loaded = true;
+  if (snap.metadata.hasPendingWrites) setSync("wait", "Sto salvando…");
+  else if (snap.metadata.fromCache) setSync("off", navigator.onLine ? "Collegamento…" : "Senza internet: salvo appena torna");
+  else setSync("on", "Salvato e sincronizzato");
+  render();
+  // Le voci ancora in chiaro (di prima della cifratura) si cifrano da sole, una alla volta.
+  for (const id of daConvertire) {
+    if (inConversione.has(id)) continue;
+    inConversione.add(id);
+    cifraVoce(chiave, o.get(id))
+      .then((cifrata) => setDoc(doc(col, id), cifrata))
+      .catch(() => { /* resta in chiaro, ci si riprova al prossimo giro */ })
+      .finally(() => inConversione.delete(id));
+  }
+}
+
+$("#esci").addEventListener("click", async () => {
+  // Uscire toglie da questo dispositivo sia la chiave sia la copia delle voci.
+  uscendo = true;
+  const uid = auth.currentUser && auth.currentUser.uid;
+  if (stopListen) { stopListen(); stopListen = null; }
+  try { await signOut(auth); } catch { /* si pulisce lo stesso */ }
+  if (uid) await chiaveLocale.cancella(uid);
+  try { await terminate(db); await clearIndexedDbPersistence(db); } catch { /* al peggio resta la cache cifrata */ }
+  location.reload();
 });
+
+/* ---------- Voci bloccate (password cambiata su un dispositivo nuovo) ---------- */
+
+let bloccoUtente = null, bloccoPassword = null;
+
+function mostraBlocco(user, password) {
+  bloccoUtente = user;
+  bloccoPassword = password;
+  $("#blocco-pass").value = "";
+  $("#blocco-err").hidden = true;
+  show("vista-blocco");
+}
+
+$("#blocco-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const vecchia = $("#blocco-pass").value;
+  if (!vecchia || !bloccoUtente) return;
+  const b = $("#blocco-ok");
+  b.disabled = true;
+  try {
+    const snap = await getDocFromServer(doc(col, ID_CHIAVE));
+    const k = await apriConPassword(snap.data().utente, vecchia);
+    // Da qui in avanti vale la password nuova, quella con cui si è appena entrati.
+    await updateDoc(doc(col, ID_CHIAVE), { utente: await avvolgiConPassword(k, bloccoPassword), aggiornato: Date.now() });
+    await chiaveLocale.scrivi(bloccoUtente.uid, k);
+    chiave = k;
+    const u = bloccoUtente;
+    bloccoUtente = bloccoPassword = null;
+    apriBacheca(u);
+  } catch {
+    $("#blocco-err").hidden = false;
+  } finally {
+    b.disabled = false;
+  }
+});
+
+$("#blocco-esci").addEventListener("click", () => { bloccoUtente = bloccoPassword = null; signOut(auth); });
 
 function setSync(state, label) {
   const s = $("#sync");
@@ -92,7 +301,8 @@ function safe(p) {
     else showToast("Non sono riuscito a salvare, riprova", false);
   });
 }
-const put = (id, data) => safe(setDoc(doc(col, id), data));
+// Una voce intera si scrive sempre cifrata; i ritocchi (parte, fatto) toccano solo campi in chiaro.
+const put = (id, voce) => safe(cifraVoce(chiave, voce).then((c) => setDoc(doc(col, id), c)));
 const patch = (id, data) => safe(updateDoc(doc(col, id), data));
 const remove = (id) => safe(deleteDoc(doc(col, id)));
 const newId = () => doc(col).id;
@@ -143,11 +353,14 @@ $("#acc-form").addEventListener("submit", async (e) => {
   const b = $("#acc-entra");
   b.disabled = true;
   loginMsg("", "");
+  // La password serve anche ad aprire la chiave delle voci: la si passa a chi gestisce l'entrata
+  passwordAppenaScritta = pass;
   try {
     if (creating) await createUserWithEmailAndPassword(auth, email, pass);
     else await signInWithEmailAndPassword(auth, email, pass);
     $("#acc-pass").value = "";
   } catch (err) {
+    passwordAppenaScritta = null;
     loginMsg(authErr(err), "");
   } finally {
     b.disabled = false;
@@ -164,8 +377,6 @@ $("#acc-reset").addEventListener("click", async () => {
     loginMsg(authErr(err), "");
   }
 });
-
-$("#esci").addEventListener("click", () => signOut(auth));
 
 /* ---------- Date ---------- */
 

@@ -12,6 +12,8 @@ App: https://vitojgallo-dev.github.io/bacheca-priorita/
   `utenti/<id della persona>/note`. Ognuno vede solo le sue: lo decidono le regole in `firestore.rules`.
 - Si entra con email e password (Firebase Authentication). Si fa una volta per dispositivo, poi resta dentro.
 - Senza internet la pagina si apre lo stesso (service worker) e le modifiche partono quando torna la connessione.
+- Il contenuto delle voci è **cifrato sul dispositivo** prima di partire: nel database, e quindi anche nella
+  console di Firebase, si legge solo testo illeggibile. Chi usa l'app non se ne accorge. Vedi «Cifratura».
 
 ## Messa in funzione (una volta sola)
 
@@ -56,9 +58,9 @@ I dispositivi prendono la nuova versione alla prossima apertura con internet.
 L'app (questi file, su GitHub) e le voci (su Firestore) sono separate: pubblicare una versione
 nuova non cancella niente. Restano tre modi per far *sparire* le voci, e vanno evitati:
 
-1. **Cambiare la forma dei dati.** Il percorso `utenti/<id>/note` e i nomi dei campi
-   (`titolo`, `persona`, `quando`, `q`, `stato`, `dettagli`, `tel`, `email`, `rif`, `creato`,
-   `aggiornato`, `fatto`) sono un contratto con i dati già salvati. Si possono **aggiungere**
+1. **Cambiare la forma dei dati.** Il percorso `utenti/<id>/note`, il documento `_chiave`, i campi
+   in chiaro (`q`, `stato`, `creato`, `aggiornato`, `fatto`, `v`, `c`) e quelli dentro la parte cifrata
+   (`titolo`, `persona`, `quando`, `dettagli`, `tel`, `email`, `rif`) sono un contratto con i dati già salvati. Si possono **aggiungere**
    campi nuovi; rinominarli o spostarli no, a meno di scrivere prima una conversione che
    aggiorna le voci esistenti.
 2. **Cambiare `firebase-config.js`** verso un altro progetto: la lista apparirebbe vuota.
@@ -68,13 +70,47 @@ Le parti di una volta che non esistono più vengono lette lo stesso (`qOf()` in 
 una parte sconosciuta in "Non importante non urgente"), e le modifiche conservano i campi che
 la versione corrente non conosce. Prima di un cambiamento grosso: **scarica una copia Excel**.
 
+## Cifratura
+
+Ogni persona ha una sua **chiave dati** (AES-GCM 256), creata dall'app al primo accesso. Le voci si
+cifrano con quella sul dispositivo (`cifratura.js`); nel database restano in chiaro solo parte, stato e date.
+
+La chiave dati non è mai nel database in chiaro. Il documento `utenti/<id>/note/_chiave` la contiene
+avvolta in due modi, e ne basta uno per riaverla:
+
+- `utente`: con la **password di accesso** (PBKDF2-SHA256, 600.000 giri). Per questo chi la usa non deve
+  ricordare niente in più;
+- `riserva`: con la **chiave pubblica di riserva** dell'amministratore (`chiave-riserva.js`, RSA-OAEP 3072).
+  La privata corrispondente **non è nel repository**: sta in `G:\chiavi\bacheca-priorita\` sul PC di Vito.
+
+Più una `verifica`, un testo noto cifrato con la chiave dati, che serve a riconoscere la chiave giusta.
+
+Sul dispositivo la chiave resta salvata (IndexedDB) finché non si preme «Esci», che cancella anche la
+copia delle voci. Per questo l'app si riapre senza password.
+
+**Cambio di password** («Password dimenticata»):
+
+- sul dispositivo dove si entra c'è già la chiave: l'app la riconosce con la `verifica` e la riavvolge con
+  la password nuova da sola, senza chiedere niente;
+- dispositivo nuovo: l'app chiede **una volta** la password di prima;
+- dispositivo nuovo e password di prima dimenticata: solo l'amministratore, con la chiave privata di
+  riserva, può riaprire la chiave dati. Lo strumento di recupero non è ancora scritto, si fa quando serve:
+  riapre `riserva` con `apriConRiserva()` di `cifratura.js` e riavvolge la chiave per la persona.
+
+Le voci di prima della cifratura vengono convertite da sole al primo accesso. Una voce scritta in chiaro
+da una versione vecchia rimasta su qualche dispositivo viene letta lo stesso e ricifrata.
+
+**Non cambiare `chiave-riserva.js`**: le persone già attive resterebbero con la copia avvolta da quella vecchia.
+
 ## File
 
 | File | Cosa contiene |
 |---|---|
-| `index.html` | le tre viste: accesso, bacheca, finestra del post-it |
-| `style.css` | l'aspetto: foglio a quadretti, post-it, versione telefono |
-| `app.js` | accesso, lettura e scrittura su Firestore, disegno della bacheca |
+| `index.html` | le viste: accesso, apertura, voci bloccate, bacheca, finestra della voce |
+| `style.css` | l'aspetto: le tre parti, gli elenchi a pallini, versione telefono |
+| `app.js` | accesso, sblocco della chiave, lettura e scrittura su Firestore, disegno, copia Excel |
+| `cifratura.js` | chiave dati, avvolgimenti, cifratura delle voci |
+| `chiave-riserva.js` | la chiave **pubblica** di riserva dell'amministratore |
 | `firebase-config.js` | i dati del progetto Firebase (non sono segreti) |
 | `firestore.rules` | chi può leggere e scrivere cosa |
 | `sw.js` | la copia offline della pagina |

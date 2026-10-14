@@ -1,7 +1,7 @@
 // Tiene una copia della pagina, così si apre anche senza internet.
 // Le voci invece le conserva Firestore nella sua cache e le sincronizza da solo.
 // Quando cambi un file, alza il numero di VERSIONE: i telefoni prendono la nuova copia.
-const VERSIONE = "v3";
+const VERSIONE = "v4";
 const CACHE = "cose-da-fare-" + VERSIONE;
 const FILE = [
   "./",
@@ -9,6 +9,8 @@ const FILE = [
   "style.css",
   "app.js",
   "firebase-config.js",
+  "cifratura.js",
+  "chiave-riserva.js",
   "manifest.webmanifest",
   "icone/icona-180.png",
   "icone/icona-192.png",
