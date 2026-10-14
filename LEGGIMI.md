@@ -1,15 +1,15 @@
 # Cose da fare
 
 Il foglio delle priorità (importante urgente · importante non urgente · non importante non urgente)
-con i post-it. Si apre dal browser su iPhone, Android, Windows e Mac, si può installare come app e
+con un elenco da spuntare per ogni parte. Si apre dal browser su iPhone, Android, Windows e Mac, si può installare come app e
 resta uguale su tutti i dispositivi di chi entra con la stessa email.
 
 App: https://vitojgallo-dev.github.io/bacheca-priorita/
 
 ## Come funziona
 
-- La pagina è statica (GitHub Pages). I post-it stanno su **Firebase Firestore**, in
-  `utenti/<id della persona>/note`. Ognuno vede solo i suoi: lo decidono le regole in `firestore.rules`.
+- La pagina è statica (GitHub Pages). Le voci stanno su **Firebase Firestore**, in
+  `utenti/<id della persona>/note`. Ognuno vede solo le sue: lo decidono le regole in `firestore.rules`.
 - Si entra con email e password (Firebase Authentication). Si fa una volta per dispositivo, poi resta dentro.
 - Senza internet la pagina si apre lo stesso (service worker) e le modifiche partono quando torna la connessione.
 

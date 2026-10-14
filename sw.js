@@ -1,7 +1,7 @@
 // Tiene una copia della pagina, così si apre anche senza internet.
-// I post-it invece li conserva Firestore nella sua cache e li sincronizza da solo.
+// Le voci invece le conserva Firestore nella sua cache e le sincronizza da solo.
 // Quando cambi un file, alza il numero di VERSIONE: i telefoni prendono la nuova copia.
-const VERSIONE = "v2";
+const VERSIONE = "v3";
 const CACHE = "cose-da-fare-" + VERSIONE;
 const FILE = [
   "./",

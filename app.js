@@ -1,4 +1,4 @@
-// Bacheca "Cose da fare": il foglio importante/urgente in tre parti, con post-it.
+// Bacheca "Cose da fare": il foglio importante/urgente in tre parti, ognuna con il suo elenco da spuntare.
 // I dati stanno su Firebase (Firestore) in utenti/<id>/note: ognuno vede solo i suoi,
 // uguali su tutti i dispositivi dove entra con la stessa email.
 
@@ -13,7 +13,7 @@ import {
   collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
-// Le tre parti del foglio. Un post-it con una parte sconosciuta finisce in basso.
+// Le tre parti del foglio. Una voce con una parte sconosciuta finisce in basso.
 const QUAD = {
   q1: { nome: "Importante urgente", dot: "var(--q1-note)" },
   q2: { nome: "Importante non urgente", dot: "var(--q2-note)" },
@@ -46,7 +46,7 @@ const db = initializeFirestore(app, {
 });
 
 let notes = new Map();
-let col = null;          // la collezione dei post-it di chi è entrato
+let col = null;          // la collezione delle voci di chi è entrato
 let stopListen = null;
 let loaded = false;
 
@@ -224,9 +224,9 @@ function render() {
     add.addEventListener("click", () => openEditor(null, q));
     head.append(h, add);
 
-    const list = el("div", "notes");
-    if (!items.length) list.append(el("p", "empty", loaded ? "Nessun post-it." : "Caricamento…"));
-    for (const [id, n] of items) list.append(noteCard(id, n));
+    const list = el("ul", "items");
+    if (!items.length) list.append(el("li", "empty", loaded ? "Niente da fare qui." : "Caricamento…"));
+    for (const [id, n] of items) list.append(itemRow(id, n));
     box.append(head, list);
   }
 
@@ -234,38 +234,42 @@ function render() {
   $("#fatti-n").textContent = done.length ? "(" + done.length + ")" : "";
   const ul = $("#fatti-list");
   ul.replaceChildren();
-  if (!done.length) ul.append(el("li", "done-empty", "Quando premi «✓ Fatto» su un post-it, lo trovi qui."));
+  if (!done.length) ul.append(el("li", "done-empty", "Quando tocchi il pallino di una voce, la trovi qui."));
   for (const [id, n] of done) ul.append(doneRow(id, n));
 }
 
-function noteCard(id, n) {
-  const card = el("article", "note");
-  card.draggable = true;
-  card.dataset.id = id;
+// Una voce dell'elenco: il pallino a sinistra la segna come fatta, il testo la apre
+function itemRow(id, n) {
+  const li = el("li", "item");
+  li.draggable = true;
+  li.dataset.id = id;
+
+  const tick = el("button", "tick");
+  tick.type = "button";
+  tick.setAttribute("aria-label", "Segna come fatto: " + (n.titolo || "voce"));
+  tick.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>';
+  tick.addEventListener("click", () => markDone(id, li));
 
   const open = el("button", "open");
   open.type = "button";
-  open.setAttribute("aria-label", "Apri " + (n.titolo || "post-it"));
-  open.append(el("div", "t", n.titolo || "Senza titolo"));
-  if (n.persona) open.append(el("div", "who", n.persona));
+  open.setAttribute("aria-label", "Apri " + (n.titolo || "voce"));
+  open.append(el("span", "t", n.titolo || "Senza titolo"));
+  const sub = el("span", "sub");
+  if (n.persona) sub.append(el("span", "who", n.persona));
   const w = whenText(n.quando);
-  if (w) open.append(el("div", "when " + w.cls, w.label));
-  if (n.dettagli || n.tel || n.email || n.rif) open.append(el("div", "info", "Altre informazioni dentro"));
+  if (w) sub.append(el("span", "when " + w.cls, w.label));
+  if (n.dettagli || n.tel || n.email || n.rif) sub.append(el("span", "info", "altre informazioni"));
+  if (sub.childElementCount) open.append(sub);
   open.addEventListener("click", () => openEditor(id));
 
-  const doneBtn = el("button", "done-btn", "✓ Fatto");
-  doneBtn.type = "button";
-  doneBtn.setAttribute("aria-label", "Segna come fatto: " + (n.titolo || "post-it"));
-  doneBtn.addEventListener("click", () => markDone(id, card));
-
-  card.append(open, doneBtn);
-  card.addEventListener("dragstart", (e) => {
+  li.append(tick, open);
+  li.addEventListener("dragstart", (e) => {
     e.dataTransfer.setData("text/plain", id);
     e.dataTransfer.effectAllowed = "move";
-    card.classList.add("dragging");
+    li.classList.add("dragging");
   });
-  card.addEventListener("dragend", () => card.classList.remove("dragging"));
-  return card;
+  li.addEventListener("dragend", () => li.classList.remove("dragging"));
+  return li;
 }
 
 function doneRow(id, n) {
@@ -325,11 +329,11 @@ function markDone(id, card) {
   };
   if (card && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
     card.classList.add("going");
-    setTimeout(go, 220);
+    setTimeout(go, 380);
   } else go();
 }
 
-// Sul computer si può anche trascinare un post-it da una parte all'altra
+// Sul computer si può anche trascinare una voce da una parte all'altra
 document.querySelectorAll(".quad").forEach((box) => {
   box.addEventListener("dragover", (e) => { e.preventDefault(); box.classList.add("drop"); });
   box.addEventListener("dragleave", (e) => { if (!box.contains(e.relatedTarget)) box.classList.remove("drop"); });
@@ -350,7 +354,7 @@ $("#fatti-toggle").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-expanded", String(!list.hidden));
 });
 
-/* ---------- Finestra del post-it ---------- */
+/* ---------- Finestra della voce ---------- */
 
 const dlg = $("#dlg");
 let editing = null;
@@ -360,8 +364,7 @@ for (const [q, info] of Object.entries(QUAD)) {
   const lab = el("label");
   const r = el("input");
   r.type = "radio"; r.name = "quad"; r.value = q; r.id = "f-quad-" + q;
-  const dot = el("i"); dot.style.background = info.dot;
-  lab.append(r, dot, el("span", null, info.nome));
+  lab.append(r, el("span", null, info.nome));
   quadBox.append(lab);
 }
 
@@ -394,7 +397,7 @@ function openEditor(id, q) {
   editing = id;
   const n = id ? notes.get(id) || {} : {};
   const quad = id ? qOf(n) : (q || "q1");
-  $("#dlg-title").textContent = id ? "Post-it" : "Nuovo post-it";
+  $("#dlg-title").textContent = id ? "Cosa da fare" : "Nuova cosa da fare";
   $("#f-titolo").value = n.titolo || "";
   $("#f-titolo").placeholder = "Es. Rinnovo polizza auto";
   $("#f-persona").value = n.persona || "";
@@ -577,7 +580,7 @@ function salvaFile(file) {
 }
 
 $("#scarica").addEventListener("click", async () => {
-  if (!loaded) { showToast("Aspetta che i post-it siano caricati, poi riprova", false); return; }
+  if (!loaded) { showToast("Aspetta che l'elenco sia caricato, poi riprova", false); return; }
   const oggi = new Date();
   const pad = (x) => String(x).padStart(2, "0");
   const nome = "cose-da-fare-" + oggi.getFullYear() + "-" + pad(oggi.getMonth() + 1) + "-" + pad(oggi.getDate());
@@ -586,7 +589,7 @@ $("#scarica").addEventListener("click", async () => {
   const file = xlsx ? fileXlsx(nome, dati) : fileCsv(nome, dati);
   salvaFile(file);
   const tot = dati.daFare.length + dati.fatti.length;
-  showToast("Copia pronta: " + tot + " post-it in " + file.name, false);
+  showToast("Copia pronta: " + tot + (tot === 1 ? " voce" : " voci") + " in " + file.name, false);
 });
 
 /* ---------- Funziona anche senza internet ---------- */
