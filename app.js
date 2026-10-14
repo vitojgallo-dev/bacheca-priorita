@@ -715,8 +715,10 @@ function loadXlsx() {
   return xlsxLoading;
 }
 
+// Un solo foglio: un secondo foglio "Fatti" non lo trovava nessuno (è una linguetta in basso).
+// Prima le cose da fare, poi una riga vuota, poi le fatte; la colonna Stato le distingue.
 const COLONNE = [
-  "Parte", "Titolo", "Persona o nota", "Giorno", "Ora", "Note", "Telefono", "Email",
+  "Stato", "Parte", "Titolo", "Persona o nota", "Giorno", "Ora", "Note", "Telefono", "Email",
   "N. pratica o polizza", "Scritto il", "Fatto il", "Codice",
 ];
 const fmtDate = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -725,6 +727,7 @@ const fmtStamp = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-di
 function riga(id, n) {
   const d = parseLocal(n.quando);
   return [
+    n.stato === "fatto" ? "Fatto" : "Da fare",
     QUAD[qOf(n)].nome,
     n.titolo || "",
     n.persona || "",
@@ -752,23 +755,23 @@ function righe() {
   return { daFare, fatti };
 }
 
-function fileXlsx(nome, { daFare, fatti }) {
+const tabella = ({ daFare, fatti }) =>
+  [COLONNE, ...daFare, ...(daFare.length && fatti.length ? [[]] : []), ...fatti];
+
+function fileXlsx(nome, dati) {
   const wb = xlsx.utils.book_new();
-  const larghezze = [24, 32, 28, 12, 7, 50, 16, 28, 20, 18, 18, 24].map((wch) => ({ wch }));
-  for (const [titolo, dati] of [["Da fare", daFare], ["Fatti", fatti]]) {
-    const ws = xlsx.utils.aoa_to_sheet([COLONNE, ...dati]);
-    ws["!cols"] = larghezze;
-    xlsx.utils.book_append_sheet(wb, ws, titolo);
-  }
+  const ws = xlsx.utils.aoa_to_sheet(tabella(dati));
+  ws["!cols"] = [9, 24, 32, 28, 12, 7, 50, 16, 28, 20, 18, 18, 24].map((wch) => ({ wch }));
+  ws["!autofilter"] = { ref: ws["!ref"] };   // le frecce per filtrare, es. solo i Fatto
+  xlsx.utils.book_append_sheet(wb, ws, "Cose da fare");
   const buf = xlsx.write(wb, { bookType: "xlsx", type: "array" });
   return new File([buf], nome + ".xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
 // Ripiego senza libreria: punto e virgola e BOM, come lo vuole Excel in italiano
-function fileCsv(nome, { daFare, fatti }) {
+function fileCsv(nome, dati) {
   const cella = (v) => /[";\n\r]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
-  const testo = [["Stato", ...COLONNE], ...daFare.map((r) => ["Da fare", ...r]), ...fatti.map((r) => ["Fatto", ...r])]
-    .map((r) => r.map(cella).join(";")).join("\r\n");
+  const testo = tabella(dati).map((r) => r.map(cella).join(";")).join("\r\n");
   return new File(["﻿" + testo], nome + ".csv", { type: "text/csv;charset=utf-8" });
 }
 
@@ -799,8 +802,7 @@ $("#scarica").addEventListener("click", async () => {
   if (!xlsx) await loadXlsx();
   const file = xlsx ? fileXlsx(nome, dati) : fileCsv(nome, dati);
   salvaFile(file);
-  const tot = dati.daFare.length + dati.fatti.length;
-  showToast("Copia pronta: " + tot + (tot === 1 ? " voce" : " voci") + " in " + file.name, false);
+  showToast("Copia pronta: " + dati.daFare.length + " da fare e " + dati.fatti.length + " fatte, in " + file.name, false);
 });
 
 /* ---------- Funziona anche senza internet ---------- */
