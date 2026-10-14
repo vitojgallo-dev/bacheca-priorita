@@ -51,6 +51,23 @@ Il piano gratuito (Spark) basta e avanza: 50.000 letture e 20.000 scritture al g
 Dopo aver cambiato un file, alza `VERSIONE` in `sw.js` (es. `v2`), poi commit e push.
 I dispositivi prendono la nuova versione alla prossima apertura con internet.
 
+### Un aggiornamento non deve mai toccare le voci scritte
+
+L'app (questi file, su GitHub) e le voci (su Firestore) sono separate: pubblicare una versione
+nuova non cancella niente. Restano tre modi per far *sparire* le voci, e vanno evitati:
+
+1. **Cambiare la forma dei dati.** Il percorso `utenti/<id>/note` e i nomi dei campi
+   (`titolo`, `persona`, `quando`, `q`, `stato`, `dettagli`, `tel`, `email`, `rif`, `creato`,
+   `aggiornato`, `fatto`) sono un contratto con i dati già salvati. Si possono **aggiungere**
+   campi nuovi; rinominarli o spostarli no, a meno di scrivere prima una conversione che
+   aggiorna le voci esistenti.
+2. **Cambiare `firebase-config.js`** verso un altro progetto: la lista apparirebbe vuota.
+3. **Cambiare `firestore.rules`** senza provarle: l'app non leggerebbe più niente.
+
+Le parti di una volta che non esistono più vengono lette lo stesso (`qOf()` in `app.js` porta
+una parte sconosciuta in "Non importante non urgente"), e le modifiche conservano i campi che
+la versione corrente non conosce. Prima di un cambiamento grosso: **scarica una copia Excel**.
+
 ## File
 
 | File | Cosa contiene |
